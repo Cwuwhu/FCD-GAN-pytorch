@@ -42,14 +42,14 @@ if __name__ == '__main__':
     perception_layer = 1
 
     # input path
-    dir = r'/data/chen.wu/data/ChangeNet/GF2/HY'
+    dir = r'/data'
     ImageXName = 'T1.tif'
     ImageYName = 'T2.tif'
     RefName = 'ref.tif'
 
     # output path
     outdir = dir
-    ext = '_l1w065_pw04_bl_patch_github'
+    ext = '_l1w065_pw04_github'
     CMapName = 'ChangeDensity{}'.format(ext)
     # a txt file to record the mean/std of the image
     statsName = 'stats'
@@ -71,7 +71,7 @@ if __name__ == '__main__':
     tips = 'eval_patch'
 
     # tensorboard to record experiment
-    writer = SummaryWriter(comment='GF2_HY_USSS{}'.format(ext))
+    writer = SummaryWriter(comment='USSS{}'.format(ext))
 
     ImgXPath = os.path.join(dir, ImageXName)
     ImgYPath = os.path.join(dir, ImageYName)
