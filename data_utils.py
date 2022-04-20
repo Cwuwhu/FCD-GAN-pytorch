@@ -20,14 +20,13 @@ import random
 from PIL import Image
 
 # ERROR 1: PROJ
-os.environ['PROJ_LIB'] = r'/anaconda3/share/proj/'
+os.environ['PROJ_LIB'] = r'/data/chen.wu/anaconda3/share/proj/'
 
 # dataset to read remote sensing images with gdal
 # the read patch is obtained from the large-scale image with overlaps
 # when writing the patches, only the centering region without overlap padding is written
 class GDALDataset(Dataset):
 
-    # 初始化
     def __init__(self, imgPathX, imgPathY, refPath=None, outPath=None, transforms=None, enhance=None, patch_size=(200, 200), overlap_padding=(10, 10)):
         super(GDALDataset, self).__init__()
         self.imgPathX = imgPathX
@@ -445,3 +444,182 @@ class OSCD_Dataset_RSS(Dataset):
             self.outGDALlist[idx] = GDALarray
 
         self.dslist[item_ds].GDALwrite(outImage, cur_item, outGDAL)
+
+# dataset to read images
+class WHU_Dataset(Dataset):
+
+    # 初始化
+    def __init__(self, imgDirX, imgDirY, refDir, labelDir, label_selected='-1', scale=None, transforms=None):
+        super(WHU_Dataset, self).__init__()
+
+        # label_selected: '1' all the CHANGED images in the label list
+        # label_selected: '0' all the UNCHANGED images in the label list
+        # label_selected: '-1' all the images in the label list
+        # label_selected: '-2' all the images no matter whether in the label list
+
+        labelPath = os.path.join(labelDir, 'label.txt')
+        with open(labelPath) as f:
+            data = f.readlines()
+            label_list = []
+            for line in data:
+                label_list.append(line.strip('\n').split(','))
+        self.label_list = label_list
+
+        imgFileNameX = [x for x in os.listdir(imgDirX) if self.is_image_file(x) and self.is_image_label(x, label_selected)]
+        imgFileNameY = [y for y in os.listdir(imgDirY) if self.is_image_file(y) and self.is_image_label(y, label_selected)]
+        # imgFileNameR = [r for r in os.listdir(refDir) if self.is_image_file(r) and self.is_image_label(r, label_selected)]
+
+        self.label_list = self.label_list_arrange(imgFileNameX)
+
+        if imgFileNameX != imgFileNameY:
+            print('The multi-temporal images don\'t match')
+            sys.exit(1)
+
+        self.imgPathX = [os.path.join(imgDirX, x) for x in imgFileNameX]
+        self.imgPathY = [os.path.join(imgDirY, y) for y in imgFileNameY]
+        self.RefPath = [os.path.join(refDir, r) for r in imgFileNameX]
+
+        self.transforms = transforms
+        self.scale = scale
+
+        self.meansX = []
+        self.stdX = []
+        self.meansY = []
+        self.stdY = []
+
+    def __getitem__(self, item):
+
+        imgX = Image.open(self.imgPathX[item])
+        imgY = Image.open(self.imgPathY[item])
+
+        imgX = np.array(imgX, dtype='float32')
+        imgY = np.array(imgY, dtype='float32')
+
+        imgX = imgX.transpose((2, 0, 1))
+        imgY = imgY.transpose((2, 0, 1))
+
+        label_item = self.label_list[item]
+        if int(label_item[3]) == 1:
+            Ref = Image.open(self.RefPath[item])
+            Ref = np.array(Ref)
+            Ref[Ref > 0] = 1
+            Ref = np.expand_dims(Ref, 0)
+        else:
+            Ref = np.zeros((1, imgX.shape[1], imgX.shape[2]))
+
+        if self.scale is not None:
+            imgX = self.scale(imgX, switch=1)
+            imgY = self.scale(imgY, switch=2)
+
+        imgX = torch.from_numpy(imgX).float()
+        imgY = torch.from_numpy(imgY).float()
+        Ref = torch.from_numpy(Ref).float()
+        item = torch.tensor(item)
+        label_list = [int(x) for x in self.label_list[item][1:]]
+        label = torch.tensor(label_list)
+
+        if self.transforms is not None:
+            imgX, sync = self.transforms(imgX)
+            imgY, sync = self.transforms(imgY, sync)
+
+        return imgX, imgY, Ref, item, label
+
+    def __len__(self):
+        return len(self.imgPathX)
+
+    def getFileName(self, item):
+        path, imgFileName = os.path.split(self.imgPathX[item])
+        return imgFileName
+
+    # the ext name to indicate image
+    def is_image_file(self, filename):
+        return any(filename.endswith(extension) for extension in ['.png', '.jpg', '.jpeg', '.PNG', '.JPG', '.tif'])
+
+    # function to filter images according to "label_selected"
+    def is_image_label(self, filename, label_selected):
+        if label_selected == '-2':
+            return True
+
+        for label_item in self.label_list:
+            if filename in label_item:
+                if label_selected == '-1':
+                    return True
+                if label_item[3] == label_selected:
+                    return True
+                else:
+                    return False
+
+        return False
+
+    def label_list_arrange(self, filename_list):
+        label_list = []
+        for filename in filename_list:
+            label_temp = [filename, '-1', '-1', '-2']
+            for label_item in self.label_list:
+                if filename in label_item:
+                    label_temp = label_item
+                    break
+            label_list.append(label_temp)
+        return label_list
+
+
+
+# dataset to load changed pairs and unchanged pairs in weakly supervised change detection task
+# in CHANGED and UNCHANGED samples, the one with larger count is selected as the base
+# the other one with smaller count is selected by random ordering and repeating
+class WHU_Dataset_WSS(Dataset):
+
+    def __init__(self, imgDirX, imgDirY, refDir, labelDir, scale=None, transforms=None, random_assign=True):
+        # random_assign = False, order_reset() should be call in every epoch to confirm random matching between CHANGED samples and UNCHANGED samples
+        #   every samples will be used in this pattern
+        # random_assign = True, the one with smaller count will be selected randomly in each __getitem__()
+        #   maybe not all samples will be used in this pattern
+        super(WHU_Dataset_WSS, self).__init__()
+        self.cDS = WHU_Dataset(imgDirX, imgDirY, refDir, labelDir, scale=scale, label_selected='1')
+        self.ncDS = WHU_Dataset(imgDirX, imgDirY, refDir, labelDir, scale=scale, label_selected='0', transforms=transforms)
+        self.cds_len = self.cDS.__len__()
+        self.ncds_len = self.ncDS.__len__()
+        self.random_assign = random_assign
+        if random_assign == False:
+            self.order_reset()
+
+    # repeat the sample list of the CHANGED/UNCHANGED class with smaller count to match the other one with larger count
+    def order_reset(self):
+        if self.cds_len > self.ncds_len:
+            order_temp = [i for i in range(self.ncds_len)]
+            iter = math.ceil(self.cds_len / self.ncds_len)
+            ncds_order = []
+            for i in range(iter):
+                random.shuffle(order_temp)
+                ncds_order = ncds_order + order_temp
+            self.ncds_order = ncds_order[:self.cds_len]
+            self.cds_order = [i for i in range(self.cds_len)]
+        else:
+            order_temp = [i for i in range(self.cds_len)]
+            iter = math.ceil(self.ncds_len / self.cds_len)
+            cds_order = []
+            for i in range(iter):
+                random.shuffle(order_temp)
+                cds_order = cds_order + order_temp
+            self.cds_order = cds_order[:self.ncds_len]
+            self.ncds_order = [i for i in range(self.ncds_len)]
+
+    def __getitem__(self, item):
+        if self.random_assign == False:
+            item_ncds = self.ncds_order[item]
+            item_cds = self.cds_order[item]
+        else:
+            if self.cds_len > self.ncds_len:
+                item_cds = item
+                item_ncds = random.randint(0, self.ncds_len - 1)
+            else:
+                item_ncds = item
+                item_cds = random.randint(0, self.cds_len - 1)
+
+        cds_data = self.cDS.__getitem__(item_cds)
+        ncds_data = self.ncDS.__getitem__(item_ncds)
+
+        return cds_data, ncds_data
+
+    def __len__(self):
+        return max(self.cds_len, self.ncds_len)
