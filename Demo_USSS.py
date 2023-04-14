@@ -49,7 +49,7 @@ if __name__ == '__main__':
 
     # output path
     outdir = dir
-    ext = '_l1w065_pw04_github'
+    ext = '_l1w065_pw04_github' # only used to label the output result with different file name
     CMapName = 'ChangeDensity{}'.format(ext)
     # a txt file to record the mean/std of the image
     statsName = 'stats'
