@@ -43,3 +43,26 @@ The last output file is a txt file, which will record the parameter settings of 
 ```python
 ParaTxtPath = os.path.join(outdir,'Para_{}{}.txt'.format(time.strftime("%b%d%H%M", time.localtime()), ext))
 ```
+## Demo_RSSS
+This code is a demo for the algorithm of regional supervised change detection, which means the changed areas are labelled with probable regions. 
+In the demo code, the experimental data is the pre-processed OSCD data. The users can customize their experimental data with pytorch. The core of the dataset is to read the multi-temporal images and the supervised regions (0: unchanged; 1: changed).
+Most inputs and outputs are similar with Demo_USSS.
+The notice is:
+The generator model trained can be saved and reused in the following path:
+```python
+OutGModelDir = r'/GModel'
+```
+Or you can also train a generator model in each run if you turn off the following switch:
+```python
+modelG_reuse = True
+```
+The density images and colorful images are outputed in each image file with the following extName:
+```python
+outName_density = 'density'
+outName_binary = 'color'
+```
+The discrimitor model and segmentor model can be caved in the following path:
+```python
+extName = '_l1002_r2_d1_g05_github'
+OutDir = os.path.join(imgDir, 'model{}'.format(extName))
+```
