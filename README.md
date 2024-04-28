@@ -69,4 +69,4 @@ OutDir = os.path.join(imgDir, 'model{}'.format(extName))
 
 ## About the Dataset
 Demo_USSS can diretly process the whole multi-temporal remote sensing images with the format of '.tif'.
-Demo_WSSS need to read the image with a specific format. The WHU Building dataset can be transformed into a weakly supervised change detection with the code 'Building.py'
+Demo_WSSS need to read the image with a specific format. The WHU Building dataset can be transformed into a weakly supervised change detection with the code 'BuildingProcess.py'
